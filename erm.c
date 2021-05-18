@@ -1,4 +1,6 @@
+#define _XOPEN_SOURCE 500 /* nftw */
 #include <errno.h>
+#include <ftw.h>
 #include <stdbool.h>
 #include <stdnoreturn.h>
 #include <stdio.h>
@@ -6,7 +8,17 @@
 #include <string.h>
 #include <unistd.h>
 
-noreturn void usage(int s)
+static int ftw_cb(const char *fpath, const struct stat *sb,
+		int typeflag, struct FTW *ftwbuf)
+{
+	int rv;
+	if (typeflag == FTW_D || typeflag == FTW_DP) rv = rmdir(fpath);
+	else rv = unlink(fpath);
+
+	return rv;
+}
+
+noreturn static void usage(int s)
 {
 	puts("erm [-reh] [files]");
 	exit(s);
@@ -37,7 +49,17 @@ int main(int argc, char **argv)
 
 	int rv = 0;
 	if (recursive) {
-		/* TODO: descend */
+		for (int i = 0; i < argc; i++) {
+			char *path = argv[i];
+			if (nftw(path, ftw_cb, 40, FTW_DEPTH | FTW_PHYS)) {
+				fprintf(stderr, "failed to delve into '%s': %s\n", path, strerror(errno));
+				if (stop_at_error) {
+					return 1;
+				} else {
+					rv = 1;
+				}
+			}
+		}
 	} else {
 		for (int i = 0; i < argc; i++) {
 			char *path = argv[i];
