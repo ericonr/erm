@@ -18,6 +18,16 @@ static int ftw_cb(const char *fpath, const struct stat *sb,
 	return rv;
 }
 
+static int recurse_into(const char *path)
+{
+	return nftw(path, ftw_cb, 40, FTW_DEPTH | FTW_PHYS);
+}
+
+static int single_file(const char *path)
+{
+	return remove(path);
+}
+
 noreturn static void usage(int s)
 {
 	puts("erm [-reh] [files]");
@@ -47,29 +57,19 @@ int main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
+	int (*action)(const char *) = recursive ? recurse_into : single_file;
+	const char *err_fmt = recursive ?
+		"failed to delve into '%s': %s\n" : "failed to remove '%s': %s\n";
+
 	int rv = 0;
-	if (recursive) {
-		for (int i = 0; i < argc; i++) {
-			char *path = argv[i];
-			if (nftw(path, ftw_cb, 40, FTW_DEPTH | FTW_PHYS)) {
-				fprintf(stderr, "failed to delve into '%s': %s\n", path, strerror(errno));
-				if (stop_at_error) {
-					return 1;
-				} else {
-					rv = 1;
-				}
-			}
-		}
-	} else {
-		for (int i = 0; i < argc; i++) {
-			char *path = argv[i];
-			if (remove(path)) {
-				fprintf(stderr, "failed to remove '%s': %s\n", path, strerror(errno));
-				if (stop_at_error) {
-					return 1;
-				} else {
-					rv = 1;
-				}
+	for (int i = 0; i < argc; i++) {
+		const char *path = argv[i];
+		if (action(path)) {
+			fprintf(stderr, err_fmt, path, strerror(errno));
+			if (stop_at_error) {
+				return 1;
+			} else {
+				rv = 1;
 			}
 		}
 	}
