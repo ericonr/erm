@@ -128,9 +128,9 @@ static void *process_queue_item(void *arg)
 					goto end;
 				}
 			} else {
-				/* break ? */
-				printf("unlink failed '%s': %m\n", t.path);
-				goto end;
+				/* actual error - add -f flag? */
+				fprintf(stderr, "unlink failed '%s': %m\n", t.path);
+				exit(1);
 			}
 		} else {
 			printf("unlink succeeded '%s'\n", t.path);
