@@ -31,7 +31,8 @@ struct queue {
 	pthread_cond_t cond;
 	size_t len, size;
 	struct task *tasks;
-	/* add a counter to be decremented by each thread that can't add more stuff until we know we can stop searching? */
+	/* number of free threads */
+	long free;
 };
 static struct queue queue = {0};
 
@@ -73,7 +74,13 @@ int queue_remove(struct queue *q, struct task *t)
 	int rv = 0;
 	pthread_mutex_lock(&q->mtx);
 	while (q->len == 0) {
+		if (q->free == nproc - 1) {
+			/* we are done removing things */
+			exit(0);
+		}
+		q->free++;
 		pthread_cond_wait(&q->cond, &q->mtx);
+		q->free--;
 	}
 	if (q->len == 0) {
 		rv = EAGAIN;
