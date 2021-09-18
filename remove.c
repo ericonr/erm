@@ -35,7 +35,7 @@ struct queue {
 };
 static struct queue queue = {0};
 
-int queue_add(struct queue *q, const char *path, unsigned char type, struct task *parent)
+int queue_add(struct queue *q, char *path, unsigned char type, struct task *parent)
 {
 	int rv = 0;
 
@@ -51,12 +51,7 @@ int queue_add(struct queue *q, const char *path, unsigned char type, struct task
 		q->tasks = t;
 	}
 
-	char *p = strdup(path);
-	if (!p) {
-		rv = -1;
-		goto error;
-	}
-	struct task t = {.path = p, .type = type, .parent = parent};
+	struct task t = {.path = path, .type = type, .parent = parent};
 	q->tasks[q->len++] = t;
 
 	pthread_cond_signal(&q->cond);
@@ -101,12 +96,7 @@ error:
 int recurse_into(const char *path, int c)
 {
 	(void)c;
-	return queue_add(&queue, path, DT_UNKNOWN, NULL);
-}
-
-static int filter_dir(const struct dirent *d)
-{
-	return strcmp(".", d->d_name) && strcmp("..", d->d_name);
+	return queue_add(&queue, strdup(path), DT_UNKNOWN, NULL);
 }
 
 static void *process_queue_item(void *arg)
@@ -138,9 +128,8 @@ remove_dir:
 			goto end;
 		}
 
-		struct dirent **entries;
-		int n;
-		while ((n = scandir(t.path, &entries, filter_dir, alphasort)) == -1) {
+		DIR *d;
+		while (!(d = opendir(t.path))) {
 			if (errno == ENFILE) {
 				/* sleep waiting for a closedir elsewhere
 				 * TODO: try to broadcast when file operations are done so we don't waste CPU
@@ -154,21 +143,31 @@ remove_dir:
 		struct task *p = malloc(sizeof *p);
 		*p = t;
 		t.path = NULL;
-		p->rc = n;
 
-		/* TODO: use recursive mutex, lock queue twice, use readdir only */
-		while (n--) {
-			struct dirent *entry = entries[n];
-			const char *name = entry->d_name;
-			char buf[PATH_MAX];
-			/* deal with too large path? */
-			snprintf(buf, PATH_MAX, "%s/%s", p->path, name);
+		int n = 0;
+		size_t plen = strlen(p->path);
+		struct dirent *entry;
+		pthread_mutex_lock(&q->mtx);
+		while ((entry = readdir(d))) {
+			if (strcmp(".", entry->d_name)==0 || strcmp("..", entry->d_name)==0) continue;
+
+			n++;
+
+			size_t nlen = strlen(entry->d_name);
+			char *buf = malloc(plen + nlen + 1);
+			memcpy(buf, p->path, plen);
+			buf[plen] = '/';
+			memcpy(buf+plen+1, entry->d_name, nlen);
+			buf[plen+nlen+1] = '\0';
 
 			queue_add(q, buf, entry->d_type, p);
 			printf("adding to queue'%s'\n", buf);
-			free(entry);
 		}
-		free(entries);
+		/* this store doesn't need to be atomic, since we release the mutex below */
+		atomic_store_explicit(&p->rc, n, memory_order_relaxed);
+		pthread_mutex_unlock(&q->mtx);
+		closedir(d);
+
 		continue;
 
 end:
@@ -226,8 +225,10 @@ int run_queue(void)
 
 	pthread_attr_t pattr;
 	if (pthread_attr_init(&pattr)) return -1;
-	if (pthread_attr_setstacksize(&pattr, (1 << 13) - 1024)) return -1;
+#if defined(PTHREAD_STACK_MIN)
+	if (pthread_attr_setstacksize(&pattr, PTHREAD_STACK_MIN)) return -1;
 	if (pthread_attr_setguardsize(&pattr, 1)) return -1;
+#endif
 
 	pthread_t *threads = calloc(sizeof(pthread_t), nproc);
 	if (!threads) return -1;
