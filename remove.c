@@ -28,6 +28,7 @@ struct task {
 
 struct queue {
 	pthread_mutex_t mtx;
+	pthread_cond_t cond;
 	size_t len, size;
 	struct task *tasks;
 	/* add a counter to be decremented by each thread that can't add more stuff until we know we can stop searching? */
@@ -58,6 +59,8 @@ int queue_add(struct queue *q, const char *path, unsigned char type, struct task
 	struct task t = {.path = p, .type = type, .parent = parent};
 	q->tasks[q->len++] = t;
 
+	pthread_cond_signal(&q->cond);
+
 error:
 	pthread_mutex_unlock(&q->mtx);
 	return rv;
@@ -69,6 +72,9 @@ int queue_remove(struct queue *q, struct task *t)
 {
 	int rv = 0;
 	pthread_mutex_lock(&q->mtx);
+	while (q->len == 0) {
+		pthread_cond_wait(&q->cond, &q->mtx);
+	}
 	if (q->len == 0) {
 		rv = EAGAIN;
 		goto error;
@@ -102,13 +108,7 @@ static void *process_queue_item(void *arg)
 	struct queue *q = arg;
 	struct task t;
 	while (1) {
-		int rv = queue_remove(q, &t);
-		if (rv == EAGAIN) {
-			puts("yield");
-			sched_yield();
-			continue;
-			/* no other errors yet, can be used to signal nothing is needed anymore? */
-		}
+		queue_remove(q, &t);
 
 		if (unlink(t.path)) {
 			if (errno == EISDIR) {
@@ -211,6 +211,8 @@ int run_queue(void)
 	if (pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE)) return -1;
 	if (pthread_mutex_init(&queue.mtx, &mattr)) return -1;
 	pthread_mutexattr_destroy(&mattr);
+
+	if (pthread_cond_init(&queue.cond, NULL)) return -1;
 
 	pthread_attr_t pattr;
 	if (pthread_attr_init(&pattr)) return -1;
