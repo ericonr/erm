@@ -21,8 +21,7 @@ struct task {
 	struct task *parent;
 	/* reference counting */
 	atomic_int rc;
-	/* save on syscalls when possible
-	 * TODO: actually use */
+	/* file type as reported by readdir() */
 	unsigned char type;
 };
 
@@ -117,8 +116,10 @@ static void *process_queue_item(void *arg)
 	while (1) {
 		queue_remove(q, &t);
 
+		if (t.type == DT_DIR) goto remove_dir;
 		if (unlink(t.path)) {
 			if (errno == EISDIR) {
+remove_dir:
 				if (rmdir(t.path)) {
 					printf("rmdir failed '%s': %m\n", t.path);
 					/* fall through to opening directory */
