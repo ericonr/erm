@@ -32,7 +32,7 @@ struct queue {
 	struct task *tasks;
 	/* add a counter to be decremented by each thread that can't add more stuff until we know we can stop searching? */
 };
-static struct queue queue = {.mtx = PTHREAD_MUTEX_INITIALIZER};
+static struct queue queue = {0};
 
 int queue_add(struct queue *q, const char *path, unsigned char type, struct task *parent)
 {
@@ -206,16 +206,28 @@ int run_queue(void)
 	if (nproc < 1) nproc = 1;
 	if (nproc > 64) nproc = 64;
 
+	pthread_mutexattr_t mattr;
+	if (pthread_mutexattr_init(&mattr)) return -1;
+	if (pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE)) return -1;
+	if (pthread_mutex_init(&queue.mtx, &mattr)) return -1;
+	pthread_mutexattr_destroy(&mattr);
+
+	pthread_attr_t pattr;
+	if (pthread_attr_init(&pattr)) return -1;
+	if (pthread_attr_setstacksize(&pattr, (1 << 13) - 1024)) return -1;
+	if (pthread_attr_setguardsize(&pattr, 1)) return -1;
+
 	pthread_t *threads = calloc(sizeof(pthread_t), nproc);
 	if (!threads) return -1;
 
 	int i, j = 0;
 	for (i = 0; i < nproc; i++) {
-		if (pthread_create(threads+i, NULL, process_queue_item, &queue)) {
+		if (pthread_create(threads+i, &pattr, process_queue_item, &queue)) {
 			j = 1;
 			break;
 		}
 	}
+	pthread_attr_destroy(&pattr);
 	/* if creating threads fails, cancell all the already created ones */
 	if (j) for (j = 0; j < i; j++) {
 		pthread_cancel(threads[j]);
