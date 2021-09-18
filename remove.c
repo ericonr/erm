@@ -142,7 +142,9 @@ remove_dir:
 		int n;
 		while ((n = scandir(t.path, &entries, filter_dir, alphasort)) == -1) {
 			if (errno == ENFILE) {
-				/* sleep waiting for a closedir elsewhere */
+				/* sleep waiting for a closedir elsewhere
+				 * TODO: try to broadcast when file operations are done so we don't waste CPU
+				 * XXX: bad logic - tool now exits in an arbitrary point when the fd limit is lowered */
 				sched_yield();
 				continue;
 			} else {
