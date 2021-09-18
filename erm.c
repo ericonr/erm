@@ -40,14 +40,8 @@ int main(int argc, char **argv)
 		usage(1);
 	}
 
-	if (recursive) {
-		if (!malloc_task_list(argc)) {
-			perror("malloc");
-			return 5;
-		}
-	}
 	file_action action = recursive ? recurse_into : single_file;
-	file_action callback = recursive ? join_thread : NULL;
+	file_action callback = recursive ? (void*)1 : NULL;
 	const char *err_fmt = recursive ?
 		"failed to delve into '%s': %s\n" : "failed to remove '%s': %s\n";
 
@@ -64,13 +58,14 @@ int main(int argc, char **argv)
 		}
 	}
 	if (callback) {
-		for (int i = 0; i < argc; i++) {
+		/*for (int i = 0; i < argc; i++) {
 			const char *path = argv[i];
 			if (callback(path, i)) {
 				fprintf(stderr, err_fmt, path, strerror(errno));
 				rv = 1;
 			}
-		}
+		}*/
+		run_queue();
 	}
 
 	return rv;
