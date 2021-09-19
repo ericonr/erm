@@ -41,14 +41,14 @@ int main(int argc, char **argv)
 	}
 
 	file_action action = recursive ? recurse_into : single_file;
-	file_action callback = recursive ? (void*)1 : NULL;
+	callback_action callback = recursive ? run_queue : NULL;
 	const char *err_fmt = recursive ?
-		"failed to delve into '%s': %s\n" : "failed to remove '%s': %s\n";
+		"failed to queue '%s': %s\n" : "failed to remove '%s': %s\n";
 
 	int rv = 0;
 	for (int i = 0; i < argc; i++) {
 		const char *path = argv[i];
-		if (action(path, i)) {
+		if (action(path)) {
 			fprintf(stderr, err_fmt, path, strerror(errno));
 			if (stop_at_error) {
 				return 1;
@@ -57,16 +57,7 @@ int main(int argc, char **argv)
 			}
 		}
 	}
-	if (callback) {
-		/*for (int i = 0; i < argc; i++) {
-			const char *path = argv[i];
-			if (callback(path, i)) {
-				fprintf(stderr, err_fmt, path, strerror(errno));
-				rv = 1;
-			}
-		}*/
-		run_queue();
-	}
+	if (callback) callback();
 
 	return rv;
 }

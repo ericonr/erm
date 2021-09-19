@@ -63,7 +63,7 @@ error:
 
 static long nproc;
 
-int queue_remove(struct queue *q, struct task *t)
+static int queue_remove(struct queue *q, struct task *t)
 {
 	int rv = 0;
 	pthread_mutex_lock(&q->mtx);
@@ -91,12 +91,6 @@ int queue_remove(struct queue *q, struct task *t)
 error:
 	pthread_mutex_unlock(&q->mtx);
 	return rv;
-}
-
-int recurse_into(const char *path, int c)
-{
-	(void)c;
-	return queue_add(&queue, strdup(path), DT_UNKNOWN, NULL);
 }
 
 static void *process_queue_item(void *arg)
@@ -180,7 +174,7 @@ end:
 				int rc = atomic_fetch_sub(&recurse->rc, 1);
 				printf("parent: %04d '%s'\n", rc, recurse->path);
 				if (rc < 1) {
-					printf("bad parent: %04d '%s'\n", rc, recurse->path);
+					fprintf(stderr, "bad parent: %04d '%s'\n", rc, recurse->path);
 					abort();
 				}
 				if (rc == 1) {
@@ -252,8 +246,12 @@ int run_queue(void)
 	return 0;
 }
 
-int single_file(const char *path, int c)
+int single_file(const char *path)
 {
-	(void)c;
 	return remove(path);
+}
+
+int recurse_into(const char *path)
+{
+	return queue_add(&queue, strdup(path), DT_UNKNOWN, NULL);
 }
