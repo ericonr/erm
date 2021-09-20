@@ -35,6 +35,9 @@ struct queue {
 };
 static struct queue queue = {0};
 
+pthread_mutex_t fd_mtx = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t fd_cond = PTHREAD_COND_INITIALIZER;
+
 int queue_add(struct queue *q, char *path, unsigned char type, struct task *parent)
 {
 	int rv = 0;
@@ -124,14 +127,13 @@ remove_dir:
 
 		DIR *d;
 		while (!(d = opendir(t.path))) {
-			if (errno == ENFILE) {
-				/* sleep waiting for a closedir elsewhere
-				 * TODO: try to broadcast when file operations are done so we don't waste CPU
-				 * XXX: bad logic - tool now exits in an arbitrary point when the fd limit is lowered */
-				sched_yield();
+			if (errno == EMFILE) {
+				pthread_mutex_lock(&fd_mtx);
+				pthread_cond_wait(&fd_cond, &fd_mtx);
+				pthread_mutex_unlock(&fd_mtx);
 				continue;
 			} else {
-				goto end;
+				break;
 			}
 		}
 		struct task *p = malloc(sizeof *p);
@@ -161,6 +163,9 @@ remove_dir:
 		atomic_store_explicit(&p->rc, n, memory_order_relaxed);
 		pthread_mutex_unlock(&q->mtx);
 		closedir(d);
+		pthread_mutex_lock(&fd_mtx);
+		pthread_cond_signal(&fd_cond);
+		pthread_mutex_unlock(&fd_mtx);
 
 		continue;
 
