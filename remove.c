@@ -27,18 +27,19 @@ struct task {
 	atomic_uint removed_count;
 };
 
-struct queue {
+static struct queue {
 	pthread_mutex_t mtx;
 	pthread_cond_t cond;
 	struct task *tasks;
 	size_t len, size;
 	/* number of free threads */
 	unsigned free;
-};
-static struct queue queue = {.mtx = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER};
+} queue = {.mtx = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER};
 
-pthread_mutex_t fd_mtx = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t fd_cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t fd_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t fd_cond = PTHREAD_COND_INITIALIZER;
+
+static unsigned nproc;
 
 static inline void queue_print(struct queue *q)
 {
@@ -78,8 +79,6 @@ error:
 	pthread_mutex_unlock(&q->mtx);
 	return rv;
 }
-
-static unsigned nproc;
 
 static inline int queue_remove(struct queue *q, struct task *t)
 {
