@@ -38,7 +38,20 @@ static struct queue queue = {0};
 pthread_mutex_t fd_mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t fd_cond = PTHREAD_COND_INITIALIZER;
 
-int queue_add(struct queue *q, char *path, unsigned char type, struct task *parent)
+static inline void queue_print(struct queue *q)
+{
+#ifdef DEBUGP
+	puts("begin========================");
+	for (size_t i=0; i < q->len; i++) {
+		printf("item %010zu: '%s'\n", i, q->tasks[i].path);
+	}
+	puts("end==========================");
+#else
+	(void)q;
+#endif
+}
+
+static inline int queue_add(struct queue *q, char *path, unsigned char type, struct task *parent)
 {
 	int rv = 0;
 
@@ -66,7 +79,7 @@ error:
 
 static long nproc;
 
-static int queue_remove(struct queue *q, struct task *t)
+static inline int queue_remove(struct queue *q, struct task *t)
 {
 	int rv = 0;
 	pthread_mutex_lock(&q->mtx);
@@ -83,11 +96,7 @@ static int queue_remove(struct queue *q, struct task *t)
 		rv = EAGAIN;
 		goto error;
 	}
-	puts("begin========================");
-	for (size_t i=0; i < q->len; i++) {
-		printf("item %010zu: '%s'\n", i, q->tasks[i].path);
-	}
-	puts("end==========================");
+	queue_print(q);
 	*t = q->tasks[--(q->len)];
 
 	/* the caller owns the path buffer now */
