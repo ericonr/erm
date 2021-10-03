@@ -150,14 +150,14 @@ remove_dir:
 			n++;
 
 			size_t nlen = strlen(entry->d_name);
-			char *buf = malloc(plen + nlen + 1);
+			char *buf = malloc(plen + nlen + 2);
 			memcpy(buf, p->path, plen);
 			buf[plen] = '/';
 			memcpy(buf+plen+1, entry->d_name, nlen);
 			buf[plen+nlen+1] = '\0';
 
-			queue_add(q, buf, entry->d_type, p);
 			printf("adding to queue'%s'\n", buf);
+			queue_add(q, buf, entry->d_type, p);
 		}
 		/* this store doesn't need to be atomic, since we release the mutex below */
 		atomic_store_explicit(&p->rc, n, memory_order_relaxed);
