@@ -30,12 +30,12 @@ struct task {
 struct queue {
 	pthread_mutex_t mtx;
 	pthread_cond_t cond;
-	size_t len, size;
 	struct task *tasks;
+	size_t len, size;
 	/* number of free threads */
-	long free;
+	unsigned free;
 };
-static struct queue queue = {0};
+static struct queue queue = {.mtx = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER};
 
 pthread_mutex_t fd_mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t fd_cond = PTHREAD_COND_INITIALIZER;
@@ -79,7 +79,7 @@ error:
 	return rv;
 }
 
-static long nproc;
+static unsigned nproc;
 
 static inline int queue_remove(struct queue *q, struct task *t)
 {
@@ -231,12 +231,10 @@ fast_path_dir:
 
 int run_queue(void)
 {
-	nproc = sysconf(_SC_NPROCESSORS_ONLN);
-	if (nproc < 1) nproc = 1;
-	if (nproc > 64) nproc = 64;
-
-	if (pthread_mutex_init(&queue.mtx, NULL)) return -1;
-	if (pthread_cond_init(&queue.cond, NULL)) return -1;
+	long nproc_l = sysconf(_SC_NPROCESSORS_ONLN);
+	if (nproc_l < 1) nproc_l = 1;
+	if (nproc_l > 64) nproc_l = 64;
+	nproc = nproc_l;
 
 	pthread_attr_t pattr;
 	if (pthread_attr_init(&pattr)) return -1;
@@ -248,7 +246,7 @@ int run_queue(void)
 	pthread_t *threads = calloc(sizeof(pthread_t), nproc);
 	if (!threads) return -1;
 
-	int i, j = 0;
+	unsigned i, j = 0;
 	for (i = 0; i < nproc; i++) {
 		if (pthread_create(threads+i, &pattr, process_queue_item, &queue)) {
 			j = 1;
