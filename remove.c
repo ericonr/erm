@@ -25,8 +25,6 @@ struct task {
 	/* reference counting */
 	unsigned files;
 	atomic_uint removed_count;
-	/* file type as reported by readdir() */
-	unsigned char type;
 };
 
 struct queue {
@@ -55,7 +53,7 @@ static inline void queue_print(struct queue *q)
 #endif
 }
 
-static inline int queue_add(struct queue *q, char *path, unsigned char type, struct task *parent)
+static inline int queue_add(struct queue *q, char *path, struct task *parent)
 {
 	int rv = 0;
 
@@ -71,7 +69,7 @@ static inline int queue_add(struct queue *q, char *path, unsigned char type, str
 		q->tasks = t;
 	}
 
-	struct task t = {.path = path, .type = type, .parent = parent};
+	struct task t = {.path = path, .parent = parent};
 	q->tasks[q->len++] = t;
 
 	pthread_cond_signal(&q->cond);
@@ -147,28 +145,6 @@ static void *process_queue_item(void *arg)
 	while (1) {
 		queue_remove(q, &t);
 
-		if (t.type == DT_DIR) goto remove_dir;
-		if (unlink(t.path)) {
-			if (errno == EISDIR) {
-remove_dir:
-				if (rmdir(t.path)) {
-					printf("rmdir failed '%s': %m\n", t.path);
-					/* fall through to opening directory */
-				} else {
-					/* missing error checking here and in opendir below */
-					printf("rmdir succeeded '%s'\n", t.path);
-					goto end;
-				}
-			} else {
-				/* actual error - add -f flag? */
-				fprintf(stderr, "unlink failed '%s': %m\n", t.path);
-				exit(1);
-			}
-		} else {
-			printf("unlink succeeded '%s'\n", t.path);
-			goto end;
-		}
-
 		DIR *d;
 		while (!(d = opendir(t.path))) {
 			if (errno == EMFILE) {
@@ -216,7 +192,7 @@ fast_path_dir:
 			buf[plen+nlen+1] = '\0';
 
 			printf("adding to queue'%s'\n", buf);
-			queue_add(q, buf, entry->d_type, p);
+			queue_add(q, buf, p);
 		}
 		closedir(d);
 		pthread_mutex_lock(&fd_mtx);
@@ -245,7 +221,6 @@ fast_path_dir:
 			}
 		}
 
-end:
 		if (t.parent) recurse_into_parents(&t);
 		/* we took ownership of the buffer */
 		free(t.path);
@@ -299,5 +274,8 @@ int single_file(const char *path)
 
 int recurse_into(const char *path)
 {
-	return queue_add(&queue, strdup(path), DT_UNKNOWN, NULL);
+	if (!remove(path)) return 0;
+	if (errno==ENOTEMPTY) return queue_add(&queue, strdup(path), NULL);
+
+	return 1;
 }
