@@ -80,9 +80,8 @@ error:
 	return rv;
 }
 
-static inline int queue_remove(struct queue *q, struct task *t)
+static inline void queue_remove(struct queue *q, struct task *t)
 {
-	int rv = 0;
 	pthread_mutex_lock(&q->mtx);
 	while (q->len == 0) {
 		if (q->free == nproc - 1) {
@@ -93,17 +92,12 @@ static inline int queue_remove(struct queue *q, struct task *t)
 		pthread_cond_wait(&q->cond, &q->mtx);
 		q->free--;
 	}
-	if (q->len == 0) {
-		rv = EAGAIN;
-		goto error;
-	}
 	queue_print(q);
 	*t = q->tasks[--(q->len)];
 
 	/* the caller owns the path buffer now */
-error:
+
 	pthread_mutex_unlock(&q->mtx);
-	return rv;
 }
 
 static inline void recurse_into_parents(struct task *t)
