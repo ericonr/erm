@@ -79,6 +79,7 @@ static inline void queue_remove(struct queue *q, struct task *t)
 	while (q->len == 0) {
 		if (q->free == nproc - 1) {
 			/* we are done removing things */
+			free(q->tasks);
 			exit(0);
 		}
 		q->free++;
