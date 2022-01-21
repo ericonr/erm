@@ -54,30 +54,23 @@ static inline void queue_print(struct queue *q)
 #endif
 }
 
-static inline int queue_add(struct queue *q, char *path, struct task *parent)
+static inline void queue_add(struct queue *q, char *path, struct task *parent)
 {
-	int rv = 0;
-
 	pthread_mutex_lock(&q->mtx);
 	if (q->len + 1 > q->size) {
 		q->size *= 2;
 		if (q->size == 0) q->size = 32;
-		void *t = realloc(q->tasks, q->size * sizeof(struct task));
-		if (!t) {
-			rv = -1;
-			goto error;
+		q->tasks = realloc(q->tasks, q->size * sizeof(struct task));
+		if (!q->tasks) {
+			fprintf(stderr, "queue memory exhaustion: %m\n");
+			exit(1);
 		}
-		q->tasks = t;
 	}
 
-	struct task t = {.path = path, .parent = parent};
-	q->tasks[q->len++] = t;
+	q->tasks[q->len++] = (struct task){.path = path, .parent = parent};
 
 	pthread_cond_signal(&q->cond);
-
-error:
 	pthread_mutex_unlock(&q->mtx);
-	return rv;
 }
 
 static inline void queue_remove(struct queue *q, struct task *t)
@@ -146,7 +139,8 @@ static void *process_queue_item(void *arg)
 				pthread_mutex_unlock(&fd_mtx);
 				continue;
 			} else {
-				break;
+				fprintf(stderr, "couldn't open '%s': %m\n", t.path);
+				exit(1);
 			}
 		}
 		DIR *d = fdopendir(dfd);
@@ -222,51 +216,65 @@ fast_path_dir:
 	return NULL;
 }
 
-int run_queue(void)
+static void exit_init(void)
+{
+	fprintf(stderr, "thread initialization failed: %m\n");
+	exit(1);
+}
+
+void run_queue(void)
 {
 	long nproc_l = sysconf(_SC_NPROCESSORS_ONLN);
 	if (nproc_l < 1) nproc_l = 1;
 	if (nproc_l > 64) nproc_l = 64;
 	nproc = nproc_l;
 
-	pthread_attr_t pattr;
-	if (pthread_attr_init(&pattr)) return -1;
+
+	/* main thread will also be a task */
+	unsigned nproc1 = nproc - 1;
+
+	if (nproc1) {
+		pthread_attr_t pattr;
+		if (pthread_attr_init(&pattr)) exit_init();
 #if defined(PTHREAD_STACK_MIN)
-	if (pthread_attr_setstacksize(&pattr, PTHREAD_STACK_MIN)) return -1;
-	if (pthread_attr_setguardsize(&pattr, 1)) return -1;
+		if (pthread_attr_setstacksize(&pattr, PTHREAD_STACK_MIN) ||
+				pthread_attr_setguardsize(&pattr, 1)) exit_init();
 #endif
 
-	pthread_t *threads = calloc(sizeof(pthread_t), nproc);
-	if (!threads) return -1;
+		pthread_t *threads = calloc(sizeof(pthread_t), nproc1);
+		if (!threads) exit_init();
 
-	unsigned i, j = 0;
-	for (i = 0; i < nproc; i++) {
-		if (pthread_create(threads+i, &pattr, process_queue_item, &queue)) {
-			j = 1;
-			break;
-		}
-	}
-	pthread_attr_destroy(&pattr);
-	/* if creating threads fails, cancell all the already created ones */
-	if (j) for (j = 0; j < i; j++) {
-		pthread_cancel(threads[j]);
-	}
-	for (j = 0; j < i; j++) {
-		pthread_join(threads[j], NULL);
+		for (unsigned i = 0; i < nproc1; i++)
+			if (pthread_create(threads+i, &pattr, process_queue_item, &queue)) exit_init();
+
+		pthread_attr_destroy(&pattr);
 	}
 
-	return 0;
+	/* become one of the worker threads */
+	process_queue_item(&queue);
+}
+
+static void fail_single_file(const char *path)
+{
+	fprintf(stderr, "failed to remove '%s': %m\n", path);
 }
 
 int single_file(const char *path)
 {
-	return remove(path);
+	int rv = remove(path);
+	if (rv) fail_single_file(path);
+	return rv;
 }
 
-int recurse_into(const char *path)
+void recurse_into(const char *path, int stop_at_error)
 {
-	if (!remove(path)) return 0;
-	if (errno==ENOTEMPTY) return queue_add(&queue, strdup(path), NULL);
-
-	return 1;
+	if (!remove(path)) {
+		return;
+	} else if (errno == ENOTEMPTY) {
+		queue_add(&queue, strdup(path), NULL);
+		return;
+	} else {
+		fail_single_file(path);
+		if (stop_at_error) exit(1);
+	}
 }

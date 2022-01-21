@@ -1,7 +1,4 @@
-typedef int (*file_action)(const char *path);
-typedef int (*callback_action)(void);
-
 /* remove.c */
-int recurse_into(const char *);
+void recurse_into(const char *, int);
+void run_queue(void);
 int single_file(const char *);
-int run_queue(void);

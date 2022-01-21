@@ -40,24 +40,22 @@ int main(int argc, char **argv)
 		usage(1);
 	}
 
-	file_action action = recursive ? recurse_into : single_file;
-	callback_action callback = recursive ? run_queue : NULL;
-	const char *err_fmt = recursive ?
-		"failed to queue '%s': %s\n" : "failed to remove '%s': %s\n";
-
 	int rv = 0;
 	for (int i = 0; i < argc; i++) {
 		const char *path = argv[i];
-		if (action(path)) {
-			fprintf(stderr, err_fmt, path, strerror(errno));
-			if (stop_at_error) {
-				return 1;
-			} else {
-				rv = 1;
+		if (recursive) {
+			recurse_into(path, stop_at_error);
+		} else {
+			if (single_file(path)) {
+				if (stop_at_error) {
+					return 1;
+				} else {
+					rv = 1;
+				}
 			}
 		}
 	}
-	if (callback) callback();
+	if (recursive) run_queue();
 
 	return rv;
 }
