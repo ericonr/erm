@@ -241,11 +241,11 @@ void run_queue(void)
 				pthread_attr_setguardsize(&pattr, 1)) exit_init();
 #endif
 
-		pthread_t *threads = calloc(sizeof(pthread_t), nproc1);
-		if (!threads) exit_init();
-
-		for (unsigned i = 0; i < nproc1; i++)
-			if (pthread_create(threads+i, &pattr, process_queue_item, &queue)) exit_init();
+		for (unsigned i = 0; i < nproc1; i++) {
+			pthread_t thread;
+			if (pthread_create(&thread, &pattr, process_queue_item, &queue)) exit_init();
+			pthread_detach(thread);
+		}
 
 		pthread_attr_destroy(&pattr);
 	}
