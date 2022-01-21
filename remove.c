@@ -138,8 +138,8 @@ static void *process_queue_item(void *arg)
 	while (1) {
 		queue_remove(q, &t);
 
-		DIR *d;
-		while (!(d = opendir(t.path))) {
+		int dfd;
+		while ((dfd = open(t.path, O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC)) < 0) {
 			if (errno == EMFILE) {
 				pthread_mutex_lock(&fd_mtx);
 				pthread_cond_wait(&fd_cond, &fd_mtx);
@@ -149,7 +149,7 @@ static void *process_queue_item(void *arg)
 				break;
 			}
 		}
-		int dfd = dirfd(d);
+		DIR *d = fdopendir(dfd);
 
 		struct task *p = NULL;
 		unsigned n = 0;
