@@ -144,6 +144,10 @@ static void *process_queue_item(void *arg)
 			}
 		}
 		DIR *d = fdopendir(dfd);
+		if (!d) {
+			fprintf(stderr, "couldn't create directory stream: %m\n");
+			exit(1);
+		}
 
 		struct task *p = NULL;
 		unsigned n = 0;
