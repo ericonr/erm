@@ -19,6 +19,9 @@ int main(int argc, char **argv)
 	bool recursive = false;
 	bool stop_at_error = true;
 
+	/* we don't use stdin, so give ourselves an extra fd */
+	fclose(stdin);
+
 	int opt;
 	while ((opt = getopt(argc, argv, "reh")) != -1) {
 		switch (opt) {
