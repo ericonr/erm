@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <threads.h>
 #include <unistd.h>
 
 #include "erm.h"
@@ -40,6 +41,9 @@ static pthread_mutex_t fd_mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fd_cond = PTHREAD_COND_INITIALIZER;
 
 static unsigned nproc;
+
+/* p_old is a struct task cache; this means each thread can leak one struct task in total */
+static thread_local struct task *p_old = NULL;
 
 static inline void queue_print(struct queue *q)
 {
@@ -96,8 +100,7 @@ static inline void queue_remove(struct queue *q, struct task *t)
 
 static inline void recurse_into_parents(struct task *t)
 {
-	struct task *recurse = t;
-	void *free_list = NULL;
+	struct task *recurse = t, *free_list = NULL;
 	while ((recurse = recurse->parent)) {
 		free(free_list); free_list = NULL;
 
@@ -113,8 +116,10 @@ static inline void recurse_into_parents(struct task *t)
 				printf("rec rmdir succeeded '%s'\n", recurse->path);
 			}
 			free(recurse->path);
+
 			/* can't free now because the while condition uses it */
-			free_list = recurse;
+			if (p_old) free_list = recurse;
+			else p_old = recurse;
 		} else {
 			/* if we haven't removed this directory yet,
 			 * there's no reason to recurse further */
@@ -128,8 +133,7 @@ static inline void recurse_into_parents(struct task *t)
 static void *process_queue_item(void *arg)
 {
 	struct queue *q = arg;
-	/* p_old is a struct task cache; this means each thread can leak one struct task in total */
-	struct task t, *p_old = NULL;
+	struct task t;
 	while (1) {
 		queue_remove(q, &t);
 
@@ -180,6 +184,7 @@ fast_path_dir:
 					puts("used p_old");
 				} else {
 					p = malloc(sizeof *p);
+					puts("didn't use p_old");
 				}
 				*p = t;
 				/* access happens only after mutex lock and release */
@@ -208,7 +213,9 @@ fast_path_dir:
 			unsigned rc = atomic_fetch_and_explicit(&p->removed_count, ~ACQUIRED, memory_order_release);
 			if (rc == (n|ACQUIRED)) {
 				/* this branch is taken when other threads have already removed all of p's children */
-				p_old = p;
+				if (p_old) free(p);
+				else p_old = p;
+
 				if (rmdir(t.path)) {
 					fprintf(stderr, "atomic rmdir failed '%s': %m\n", t.path);
 				} else {
