@@ -155,7 +155,10 @@ static void *process_queue_item(void *arg)
 		size_t plen = strlen(t.path);
 		struct dirent *entry;
 		while ((entry = readdir(d))) {
-			if (strcmp(".", entry->d_name)==0 || strcmp("..", entry->d_name)==0) continue;
+			if (entry->d_name[0] == '.' &&
+					(entry->d_name[1] == '\0' ||
+					 (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+				continue;
 
 			/* fast path to avoid allocations */
 			int trv;
