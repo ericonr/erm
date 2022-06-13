@@ -128,7 +128,8 @@ static inline void recurse_into_parents(struct task *t)
 static void *process_queue_item(void *arg)
 {
 	struct queue *q = arg;
-	struct task t;
+	/* p_old is a struct task cache; this means each thread can leak one struct task in total */
+	struct task t, *p_old = NULL;
 	while (1) {
 		queue_remove(q, &t);
 
@@ -173,7 +174,13 @@ fast_path_dir:
 
 			/* lazy allocation of p and other operations */
 			if (!p) {
-				p = malloc(sizeof *p);
+				if (p_old) {
+					p = p_old;
+					p_old = NULL;
+					puts("used p_old");
+				} else {
+					p = malloc(sizeof *p);
+				}
 				*p = t;
 				/* access happens only after mutex lock and release */
 				atomic_store_explicit(&p->removed_count, ACQUIRED, memory_order_relaxed);
@@ -200,8 +207,8 @@ fast_path_dir:
 			p->files = n-1; /* other thread will compare against removed_count-1 */
 			unsigned rc = atomic_fetch_and_explicit(&p->removed_count, ~ACQUIRED, memory_order_release);
 			if (rc == (n|ACQUIRED)) {
-				free(p);
 				/* this branch is taken when other threads have already removed all of p's children */
+				p_old = p;
 				if (rmdir(t.path)) {
 					fprintf(stderr, "atomic rmdir failed '%s': %m\n", t.path);
 				} else {
