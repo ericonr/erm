@@ -101,7 +101,7 @@ static inline void recurse_into_parents(struct task *t)
 	while ((recurse = recurse->parent)) {
 		free(free_list); free_list = NULL;
 
-		unsigned rc = atomic_fetch_add_explicit(&recurse->removed_count, 1, memory_order_acq_rel);
+		unsigned rc = atomic_fetch_add_explicit(&recurse->removed_count, 1, memory_order_acquire);
 		if (rc & ACQUIRED) break;
 
 		printf("parent: removed %04d total %04d '%s'\n", rc, recurse->files, recurse->path);
@@ -193,15 +193,17 @@ fast_path_dir:
 
 		if (p) {
 			p->files = n-1; /* other thread will compare against removed_count-1 */
-			unsigned rc = atomic_fetch_and_explicit(&p->removed_count, ~ACQUIRED, memory_order_acq_rel);
+			unsigned rc = atomic_fetch_and_explicit(&p->removed_count, ~ACQUIRED, memory_order_release);
 			if (rc == (n|ACQUIRED)) {
 				free(p);
+				/* this branch is taken when other threads have already removed all of p's children */
 				if (rmdir(t.path)) {
 					fprintf(stderr, "atomic rmdir failed '%s': %m\n", t.path);
 				} else {
 					printf("atomic rmdir succeeded '%s'\n", t.path);
 				}
 			} else {
+				/* we can't recurse into p's parent if p still has children that need to be removed */
 				continue;
 			}
 		} else {
