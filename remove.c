@@ -152,7 +152,7 @@ static void *process_queue_item(void *arg)
 
 		struct task *p = NULL;
 		unsigned n = 0;
-		size_t plen = strlen(t.path);
+		size_t plen;
 		struct dirent *entry;
 		while ((entry = readdir(d))) {
 			if (entry->d_name[0] == '.' &&
@@ -171,12 +171,14 @@ fast_path_dir:
 
 			n++;
 
-			/* lazy allocation of p */
+			/* lazy allocation of p and other operations */
 			if (!p) {
 				p = malloc(sizeof *p);
 				*p = t;
 				/* access happens only after mutex lock and release */
 				atomic_store_explicit(&p->removed_count, ACQUIRED, memory_order_relaxed);
+
+				plen = strlen(t.path);
 			}
 
 			size_t nlen = strlen(entry->d_name);
