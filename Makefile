@@ -1,5 +1,5 @@
 OPT = -O2
-CFLAGS = -Wall -Wextra $(OPT)
+CFLAGS = -std=c11 -D_POSIX_C_SOURCE=200809UL -D_DEFAULT_SOURCE -Wall -Wextra $(OPT)
 
 .PHONY: all
 
